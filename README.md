@@ -105,7 +105,7 @@ O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comp
 
 ✅ Dataset íntegro nas 10 lojas — nenhum tratamento corretivo foi necessário.
 
-📸 ![Execução do notebook de qualidade](./evidencias/0lidade_dados.png8_qua)
+📸 ![Execução do notebook de qualidade](./evidencias/08_qualidade_dados.png)
 
 ---
 
