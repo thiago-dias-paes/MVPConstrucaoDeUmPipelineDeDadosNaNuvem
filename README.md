@@ -43,7 +43,7 @@ Os MVPs 1 e 2 restringiram a análise à Loja 1, identificando 2 famílias de mo
 O `train.csv` foi enviado via upload manual para um Volume do Unity Catalog (`bronze.sop_forecast.raw_files`) e ingerido como tabela Delta pelo notebook [`01_bronze_ingestao.ipynb`](./01_bronze_ingestao.ipynb), com metadados de controle (`_ingestion_ts`, `_fonte`). Resultado: 913.000 linhas — volume idêntico ao validado nos MVPs anteriores.
 
 📸 ![Volume com o arquivo carregado](./evidencias/01_volume_train_csv.png)
-📸 ![Execução da ingestão bronze](./evidencias/02_ingestao_bronze.png)
+📸 ![Contagem Bronze vs. Silver](./evidencias/02_ingestao_bronze.png)
 
 ---
 
@@ -51,7 +51,7 @@ O `train.csv` foi enviado via upload manual para um Volume do Unity Catalog (`br
 
 Esquema Estrela na camada Gold, com uma decisão de modelagem central: como `cluster_id` e `mix_pct` dependem da combinação loja+item (cada loja tem seu próprio K-Means), esses atributos foram isolados em uma **tabela ponte** (`dim_item_loja`), evitando violar a granularidade da dimensão `dim_item`.
 
-![Arquitetura do pipeline](./evidencias/03_arquitetura_diagrama.png)
+📸 ![Arquitetura do pipeline](./evidencias/03_arquitetura_diagrama.png)
 
 | Tabela | Camada | Colunas principais | Descrição |
 |---|---|---|---|
@@ -83,11 +83,36 @@ O pipeline foi ramificado em 7 notebooks, um por responsabilidade:
 | [`06_qualidade_dados`](./06_qualidade_dados.ipynb) | — | Verificações de qualidade |
 | [`07_analise_perguntas_negocio`](./07_analise_perguntas_negocio.ipynb) | — | Respostas às perguntas de negócio |
 
-O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comparação com modelos de Machine Learning** (ex: XGBoost) — essa comparação já foi feita e validada estatisticamente no MVP2 (Wilcoxon, p<0.001, N=365 pares), e o escopo deste MVP é de engenharia de dados, não de nova investigação de modelagem.
+O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comparação com modelos de Machine Learning** (ex: XGBoost) — essa comparação já foi feita e validada estatisticamente no MVP2 (Wilcoxon, p<0.001, N=365 pares), mantendo o escopo deste MVP focado em engenharia de dados, não em nova investigação de modelagem.
 
 📸 ![Clusters por loja](./evidencias/05_clusters_por_loja.png)
 📸 ![Dimensões e fato criados](./evidencias/06_dimensoes_e_fato.png)
 📸 ![Forecast Naive vs Holt-Winters](./evidencias/07_forecast_resultado.png)
+
+### Validação da camada Gold via SQL
+
+Como reforço final, a camada Gold foi validada diretamente via SQL Editor, sem depender do ambiente Python/PySpark — confirmando que os dados estão de fato prontos para consumo analítico padrão, como previsto pela Arquitetura Medalhão:
+
+```
+SELECT l.nome_loja, f.ano_mes, SUM(f.vendas_mes) AS total_vendas
+FROM gold.sop_forecast.fato_vendas_mensal f
+JOIN gold.sop_forecast.dim_loja l ON f.loja_id = l.loja_id
+GROUP BY l.nome_loja, f.ano_mes
+ORDER BY f.ano_mes DESC
+LIMIT 10;
+```
+
+```
+SELECT loja_id, cluster_id, mape_naive, mape_hw, modelo_vencedor
+FROM gold.sop_forecast.fato_forecast_cluster
+GROUP BY loja_id, cluster_id, mape_naive, mape_hw, modelo_vencedor
+ORDER BY loja_id, cluster_id;
+```
+
+📸 ![Consulta SQL — volume por loja](./evidencias/11_sql_volume_por_loja.png)
+📸 ![Consulta SQL — forecast por cluster](./evidencias/12_sql_forecast_cluster.png)
+
+Scripts completos: [`/`](.) (raiz do repositório)
 
 ---
 
@@ -103,7 +128,7 @@ O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comp
 | Completude estrutural | 913.000 esperado = 913.000 real (gap = 0) |
 | Histórico esparso (>10% meses zerados) | 0 de 500 combinações loja-item |
 
-✅ Dataset íntegro nas 10 lojas — nenhum tratamento corretivo foi necessário.
+Dataset íntegro nas 10 lojas — nenhum tratamento corretivo foi necessário.
 
 📸 ![Execução do notebook de qualidade](./evidencias/08_qualidade_dados.png)
 
@@ -112,22 +137,22 @@ O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comp
 ## Análise de Dados (Etapa 4.5)
 
 **P1 — Os clusters se replicam entre lojas?**
-⚠ Não confirmada. A concordância bruta (52%–66% vs. Loja 1) parecia indicar similaridade, mas ao corrigir pelo acaso via Adjusted Rand Index (matriz 10×10 entre todas as lojas), os valores caíram para ~0 (-0,02 a 0,08) — estatisticamente equivalente a atribuição aleatória. Cada loja possui estrutura sazonal própria.
+Não confirmada. A concordância bruta (52%–66% vs. Loja 1) parecia indicar similaridade, mas ao corrigir pelo acaso via Adjusted Rand Index (matriz 10×10 entre todas as lojas), os valores caíram para próximo de zero (-0,02 a 0,08) — estatisticamente equivalente a atribuição aleatória. Conclui-se que cada loja possui estrutura sazonal própria.
 
 **P2 — Distribuição de volume por loja e cluster**
-✅ Respondida. Grande heterogeneidade entre lojas — ex: Loja 9 com desequilíbrio extremo (4,4M vs. 0,6M un.), Loja 8 mais equilibrada.
+Respondida. Grande heterogeneidade entre lojas — ex: Loja 9 com desequilíbrio extremo (4,4M vs. 0,6M un.), Loja 8 mais equilibrada.
 
 **P3 — Correlação entre cluster e perfil de loja**
-⚠ Não é possível responder com atributos externos (o dataset não os fornece). Uma tentativa via meta-clustering (mesma técnica da P1) também não encontrou padrão. Pergunta registrada como não respondida — ver Autoavaliação.
+Não é possível responder com atributos externos (o dataset não os fornece). Uma tentativa via meta-clustering (mesma técnica da P1) também não encontrou padrão. Pergunta registrada como não respondida — ver Autoavaliação.
 
 **P4 — Itens com histórico esparso**
-✅ Confirmada. 0 de 500 combinações loja-item têm mais de 10% de meses zerados — reforça, em escala, a premissa de viabilidade da modelagem por família do MVP1.
+Confirmada. 0 de 500 combinações loja-item têm mais de 10% de meses zerados — reforça, em escala, a premissa de viabilidade da modelagem por família do MVP1.
 
 **P5 — Holt-Winters supera o Naive Sazonal em escala?**
-✅ Confirmada. 20/20 combinações loja×cluster favoreceram o Holt-Winters (MAPE médio ≈ 2,6% vs. ≈ 3,5% do Naive), consistente com o MVP2.
+Confirmada. 20/20 combinações loja×cluster favoreceram o Holt-Winters (MAPE médio ≈ 2,6% vs. ≈ 3,5% do Naive), consistente com o MVP2.
 
 **P6 — Qualidade dos dados nas 10 lojas**
-✅ Confirmada — ver seção anterior.
+Confirmada — ver seção anterior.
 
 📸 ![Matriz ARI e dendrograma](./evidencias/09_matriz_ari_dendrograma.png)
 📸 ![Gráfico de volume por loja/cluster](./evidencias/10_volume_por_loja_cluster.png)
@@ -138,15 +163,15 @@ O modelo Holt-Winters foi aplicado diretamente na camada Gold **sem reabrir comp
 
 O objetivo inicial deste MVP era estruturar um pipeline de dados na nuvem que replicasse, em escala (10 lojas), o raciocínio analítico desenvolvido nos MVPs 1 e 2. Esse objetivo foi atingido: o pipeline completo (Bronze → Silver → Gold) está funcional, documentado e versionado, com tabelas dimensionais consistentes e um catálogo de dados detalhado.
 
-Das 6 perguntas de negócio propostas, 4 foram respondidas de forma conclusiva (P2, P4, P5, P6) e 2 tiveram resposta negativa honesta (P1, P3) — o que, na minha visão, é tão valioso quanto uma confirmação. Em particular, o processo de responder P1 revelou uma armadilha metodológica real: uma métrica de concordância bruta sugeria similaridade entre lojas, mas ao aplicar uma correção estatística pelo acaso (Adjusted Rand Index), ficou claro que esse sinal era artefato do desbalanceamento dos clusters, não um padrão genuíno. Prefiro reportar esse resultado corrigido — mesmo sendo "menos interessante" à primeira vista — a manter uma conclusão estatisticamente frágil.
+Das 6 perguntas de negócio propostas, 4 foram respondidas de forma conclusiva (P2, P4, P5, P6) e 2 tiveram resposta negativa honesta (P1, P3) — o que é considerado tão valioso quanto uma confirmação, na medida em que evita conclusões infundadas. Em particular, o processo de responder P1 revelou uma armadilha metodológica real: uma métrica de concordância bruta sugeria similaridade entre lojas, mas, ao aplicar uma correção estatística pelo acaso (Adjusted Rand Index), ficou claro que esse sinal era artefato do desbalanceamento dos clusters, não um padrão genuíno. É preferível reportar esse resultado corrigido — mesmo sendo menos interessante à primeira vista — a manter uma conclusão estatisticamente frágil.
 
-A maior dificuldade técnica foi a curva de aprendizado inicial com o Databricks, ferramenta que eu nunca havia utilizado antes (meus MVPs anteriores foram feitos inteiramente em Google Colab). Conceitos como Unity Catalog, Volumes, e a diferença entre catálogos/schemas/tabelas exigiram um tempo de adaptação que não existia no fluxo anterior — mas, uma vez compreendida a lógica, o processo de construção do pipeline propriamente dito fluiu de forma natural, especialmente por já ter uma base analítica sólida (MVP1 e MVP2) para me apoiar.
+A maior dificuldade técnica encontrada foi a curva de aprendizado inicial com o Databricks, ferramenta não utilizada anteriormente (os MVPs anteriores foram desenvolvidos inteiramente em Google Colab). Conceitos como Unity Catalog, Volumes, e a diferença entre catálogos/schemas/tabelas exigiram um tempo de adaptação que não existia no fluxo anterior — porém, uma vez compreendida a lógica, o processo de construção do pipeline propriamente dito fluiu de forma natural, apoiado na base analítica já consolidada nos MVPs 1 e 2.
 
 **Trabalhos futuros:**
 - Obter metadados reais de loja (região, porte) para testar a Pergunta 3 de forma robusta, com dados externos em vez de inferência interna
 - Automatizar a execução do pipeline via Databricks Jobs, simulando uma atualização mensal real de S&OP
 - Incorporar variáveis exógenas (feriados, promoções) na camada de forecast
-- Investigar por que a estrutura sazonal não se replica entre lojas — pode ser variação real de comportamento de consumo, e não apenas ruído estatístico, o que mereceria uma análise dedicada
+- Investigar por que a estrutura sazonal não se replica entre lojas — a ausência de padrão pode indicar variação real de comportamento de consumo, e não apenas ruído estatístico, o que mereceria uma análise dedicada
 
 ---
 
@@ -156,6 +181,7 @@ A maior dificuldade técnica foi a curva de aprendizado inicial com o Databricks
 - Arquitetura Medalhão (Bronze/Silver/Gold) via Unity Catalog
 - Modelagem dimensional (Esquema Estrela com tabela ponte)
 - ETL em PySpark, com tabelas Delta
+- Consultas de validação via SQL Editor
 
 **Análise**
 - Clustering K-Means (herdado do MVP1, replicado por loja)
