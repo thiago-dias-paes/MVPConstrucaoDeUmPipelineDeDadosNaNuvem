@@ -59,6 +59,8 @@ Esquema Estrela na camada Gold, com uma decisão de modelagem central: como `clu
 
 📸 ![Arquitetura do pipeline](./evidencias/03_arquitetura_diagrama.png)
 
+### Estrutura das tabelas
+
 | Tabela | Camada | Colunas principais | Descrição |
 |---|---|---|---|
 | `vendas_raw` | Bronze | date, store, item, sales | Cópia fiel do CSV original |
@@ -72,6 +74,45 @@ Esquema Estrela na camada Gold, com uma decisão de modelagem central: como `clu
 | `fato_forecast_cluster` | Gold | loja_id, cluster_id, ano_mes, real, pred_naive, pred_hw, mape_naive, mape_hw | Fato de previsão por cluster |
 
 📸 ![Estrutura de catálogos no Catalog Explorer](./evidencias/04_catalogos_bronze_silver_gold.png)
+
+### Catálogo de Dados detalhado (domínio e linhagem)
+
+| Tabela | Coluna | Tipo | Domínio de valores | Linhagem |
+|---|---|---|---|---|
+| vendas_raw | date | date | 2013-01-01 a 2017-12-31 | Fonte: CSV original do Kaggle, sem transformação |
+| vendas_raw | store | int | 1 a 10 | Fonte: CSV original do Kaggle, sem transformação |
+| vendas_raw | item | int | 1 a 50 | Fonte: CSV original do Kaggle, sem transformação |
+| vendas_raw | sales | int | ≥ 0, máximo observado = 231 | Fonte: CSV original do Kaggle, sem transformação |
+| vendas_raw | _ingestion_ts | timestamp | Data/hora da ingestão | Gerado automaticamente no momento da carga Bronze |
+| vendas_raw | _fonte | string | Valor fixo: "kaggle_store_item_demand" | Gerado automaticamente no momento da carga Bronze |
+| vendas_limpo | data | date | 2013-01-01 a 2017-12-31 | Derivado de vendas_raw.date (cast para tipo date) |
+| vendas_limpo | loja_id | int | 1 a 10 | Derivado de vendas_raw.store (cast para int) |
+| vendas_limpo | item_id | int | 1 a 50 | Derivado de vendas_raw.item (cast para int) |
+| vendas_limpo | vendas | int | ≥ 0 | Derivado de vendas_raw.sales (cast + filtro vendas ≥ 0) |
+| vendas_limpo | ano_mes | date | Primeiro dia de cada mês, 2013-01 a 2017-12 | Derivado de vendas_limpo.data (truncamento mensal) |
+| clusters_sku | loja_id | int | 1 a 10 | Herdado de vendas_limpo |
+| clusters_sku | item_id | int | 1 a 50 | Herdado de vendas_limpo |
+| clusters_sku | cluster_id | int | {0, 1} | Calculado via K-Means (K=2) sobre índices sazonais normalizados (Min-Max), de forma independente por loja |
+| dim_tempo | ano_mes | date | 2013-01 a 2017-12 (60 meses) | Derivado de vendas_limpo.ano_mes (valores distintos) |
+| dim_tempo | ano | int | 2013 a 2017 | Derivado de dim_tempo.ano_mes (extração do ano) |
+| dim_tempo | mes | int | 1 a 12 | Derivado de dim_tempo.ano_mes (extração do mês) |
+| dim_tempo | trimestre | int | 1 a 4 | Derivado de dim_tempo.ano_mes (extração do trimestre) |
+| dim_loja | loja_id | int | 1 a 10 | Derivado de vendas_limpo.loja_id (valores distintos) |
+| dim_loja | nome_loja | string | "Loja 1" a "Loja 10" | Gerado por concatenação a partir de loja_id |
+| dim_item | item_id | int | 1 a 50 | Derivado de vendas_limpo.item_id (valores distintos) |
+| dim_item | nome_item | string | "Item 1" a "Item 50" | Gerado por concatenação a partir de item_id |
+| dim_item_loja | loja_id, item_id | int, int | 1–10, 1–50 | Chave composta herdada de fato_vendas_mensal e clusters_sku |
+| dim_item_loja | cluster_id | int | {0, 1} | Herdado de clusters_sku via join por loja_id + item_id |
+| dim_item_loja | volume_total | int | ≥ 0 | Soma de fato_vendas_mensal.vendas_mes, agrupado por loja_id + item_id |
+| dim_item_loja | mix_pct | float | [0, 1], soma = 1 por loja+cluster | Calculado como volume_total ÷ soma do volume_total do respectivo cluster na loja |
+| fato_vendas_mensal | loja_id, item_id, ano_mes | int, int, date | 1–10, 1–50, 2013-01 a 2017-12 | Chaves herdadas de vendas_limpo |
+| fato_vendas_mensal | vendas_mes | int | ≥ 0 | Soma de vendas_limpo.vendas, agrupado por loja_id + item_id + ano_mes |
+| fato_forecast_cluster | loja_id, cluster_id, ano_mes | int, int, date | 1–10, {0,1}, últimos 12 meses da série (2017) | Chaves derivadas da série agregada por loja+cluster |
+| fato_forecast_cluster | real | float | ≥ 0 | Valor observado de vendas agregadas do cluster no mês (holdout) |
+| fato_forecast_cluster | pred_naive | float | ≥ 0 | Previsão do baseline Naive Sazonal (repetição do ciclo anterior) |
+| fato_forecast_cluster | pred_hw | float | ≥ 0 | Previsão do modelo Holt-Winters (aditivo, sazonalidade 12) |
+| fato_forecast_cluster | mape_naive, mape_hw | float, float | ≥ 0 (%) | Erro percentual médio absoluto de cada modelo no holdout |
+| fato_forecast_cluster | modelo_vencedor | string | "Naive Sazonal" ou "Holt-Winters" | Definido pela comparação entre mape_naive e mape_hw |
 
 ---
 
@@ -143,13 +184,15 @@ Dataset íntegro nas 10 lojas — nenhum tratamento corretivo foi necessário.
 ## Análise de Dados (Etapa 4.5)
 
 **P1 — Os clusters se replicam entre lojas?**
-Não confirmada. A concordância bruta (52%–66% vs. Loja 1) parecia indicar similaridade, mas ao corrigir pelo acaso via Adjusted Rand Index (matriz 10×10 entre todas as lojas), os valores caíram para próximo de zero (-0,02 a 0,08) — estatisticamente equivalente a atribuição aleatória. Conclui-se que cada loja possui estrutura sazonal própria.
+Não confirmada. A concordância bruta (52%–66% vs. Loja 1) parecia indicar similaridade, mas ao corrigir pelo acaso via Adjusted Rand Index (matriz 10×10 entre todas as lojas), os valores caíram para próximo de zero (-0,02 a 0,08) — estatisticamente equivalente a atribuição aleatória.
+
+É importante notar que essa ausência de replicação admite duas explicações não mutuamente excludentes: (i) heterogeneidade real de comportamento sazonal entre lojas, ou (ii) instabilidade inerente ao K-Means quando aplicado a um portfólio internamente homogêneo (correlação média de 0,996 entre itens de uma mesma loja, conforme MVP1), onde a fronteira entre os 2 clusters é estatisticamente frágil e sensível a pequenas variações no histórico de 5 anos. A distinção entre essas duas hipóteses exigiria testes adicionais (ex: reamostragem via bootstrap do histórico), fora do escopo deste MVP.
 
 **P2 — Distribuição de volume por loja e cluster**
 Respondida. Grande heterogeneidade entre lojas — ex: Loja 9 com desequilíbrio extremo (4,4M vs. 0,6M un.), Loja 8 mais equilibrada.
 
 **P3 — Correlação entre cluster e perfil de loja**
-Não é possível responder com atributos externos (o dataset não os fornece). Uma tentativa via meta-clustering (mesma técnica da P1) também não encontrou padrão. Pergunta registrada como não respondida — ver Autoavaliação.
+Não é possível responder com atributos externos (o dataset não os fornece). Uma tentativa via meta-clustering (mesma técnica da P1) também não encontrou padrão — resultado consistente com a limitação metodológica descrita em P1. Pergunta registrada como não respondida — ver Autoavaliação.
 
 **P4 — Itens com histórico esparso**
 Confirmada. 0 de 500 combinações loja-item têm mais de 10% de meses zerados — reforça, em escala, a premissa de viabilidade da modelagem por família do MVP1.
@@ -177,7 +220,7 @@ A maior dificuldade técnica encontrada foi a curva de aprendizado inicial com o
 - Obter metadados reais de loja (região, porte) para testar a Pergunta 3 de forma robusta, com dados externos em vez de inferência interna
 - Automatizar a execução do pipeline via Databricks Jobs, simulando uma atualização mensal real de S&OP
 - Incorporar variáveis exógenas (feriados, promoções) na camada de forecast
-- Investigar por que a estrutura sazonal não se replica entre lojas — a ausência de padrão pode indicar variação real de comportamento de consumo, e não apenas ruído estatístico, o que mereceria uma análise dedicada
+- Investigar, via reamostragem estatística, se a ausência de replicação dos clusters entre lojas (P1) reflete heterogeneidade real de negócio ou instabilidade metodológica do K-Means sobre um portfólio internamente homogêneo
 
 ---
 
