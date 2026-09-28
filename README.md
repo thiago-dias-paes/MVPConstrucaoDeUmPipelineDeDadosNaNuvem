@@ -4,6 +4,8 @@
 Este repositório contém os notebooks e a documentação do pipeline de dados construído no Databricks Free Edition, dando continuidade ao trabalho iniciado nos MVPs 1 (Análise de Dados) e 2 (Machine Learning & Analytics), agora estruturado como um pipeline de engenharia de dados na nuvem, seguindo a Arquitetura Medalhão (Bronze → Silver → Gold).
 
 **Nome:** Thiago Dias Paes Reis | **Matrícula:** 4052026000111
+
+
 **Plataforma:** Databricks Free Edition (Unity Catalog)
 
 
