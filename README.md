@@ -5,7 +5,11 @@ Este repositório contém os notebooks e a documentação do pipeline de dados c
 
 **Nome:** Thiago Dias Paes Reis | **Matrícula:** 4052026000111
 **Plataforma:** Databricks Free Edition (Unity Catalog)
+
+
 **Repositório MVP 1:** [https://github.com/thiago-dias-paes/MVPAnalisedeDadoseBoasPraticas/tree/main]
+
+
 **Repositório MVP 2:** [https://github.com/thiago-dias-paes/MVPMachineLearning-Analytics]
 
 ## Repositório
