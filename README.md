@@ -9,21 +9,30 @@ Este repositório contém os notebooks e a documentação do pipeline de dados c
 **Plataforma:** Databricks Free Edition (Unity Catalog)
 
 
-**Repositório MVP 1:** [https://github.com/thiago-dias-paes/MVPAnalisedeDadoseBoasPraticas/tree/main]
+**Repositório MVP 1:** https://github.com/thiago-dias-paes/MVPAnalisedeDadoseBoasPraticas/tree/main
 
 
-**Repositório MVP 2:** [https://github.com/thiago-dias-paes/MVPMachineLearning-Analytics]
+**Repositório MVP 2:** https://github.com/thiago-dias-paes/MVPMachineLearning-Analytics
 
 ## Repositório
 ├── 00_arquitetura_pipeline.ipynb
+
 ├── 01_bronze_ingestao.ipynb
+
 ├── 02_silver_limpeza.ipynb
+
 ├── 03_silver_indices_e_clusters.ipynb
+
 ├── 04_gold_dimensoes_e_fato.ipynb
+
 ├── 05_gold_forecast.ipynb
+
 ├── 06_qualidade_dados.ipynb
+
 ├── 07_analise_perguntas_negocio.ipynb
+
 ├── evidencias/ → screenshots do pipeline em execução 
+
 └── README.md
 
 ---
